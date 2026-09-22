@@ -1,0 +1,28 @@
+name: BTC Absorption Signal Check
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check-signal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Chay script kiem tra tin hieu
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python btc_absorption_monitor.py
