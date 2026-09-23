@@ -154,29 +154,65 @@ BINANCE_BASE_URLS = [
     "https://api1.binance.com",
     "https://api2.binance.com",
     "https://api3.binance.com",
+    "https://api4.binance.com",
+    "https://api-gcp.binance.com",
 ]
+
+
+def _raw_looks_valid(raw):
+    """Kiem tra so bo du lieu tra ve co hop le khong. Mot so dia chi API
+    du phong co the tra ve du lieu "khong day du" (vi du cot taker-buy-volume
+    luon la 0), khien delta_ratio luon tinh ra -1.000 mot cach GIA TAO chu
+    khong phai thi truong that su one-sided. Neu phat hien nhieu nen lien
+    tiep co taker_buy_quote_volume = 0 (hoac = quote_volume), coi la du lieu
+    kha nghi va thu dia chi API khac."""
+    if not raw or len(raw) < 5:
+        return False
+    suspicious = 0
+    checked = 0
+    for row in raw[-10:]:  # kiem tra 10 nen gan nhat
+        quote_volume = float(row[7])
+        taker_buy_quote_volume = float(row[9])
+        if quote_volume <= 0:
+            continue
+        checked += 1
+        # nghi ngo neu taker-buy = 0 het hoac = toan bo volume het (delta_ratio = +-1.000 chinh xac)
+        if taker_buy_quote_volume <= 0 or abs(taker_buy_quote_volume - quote_volume) < 1e-9:
+            suspicious += 1
+    if checked == 0:
+        return False
+    # neu qua nua so nen kiem tra deu co dau hieu du lieu gia/thieu -> khong hop le
+    return (suspicious / checked) < 0.5
 
 
 def fetch_klines(symbol=SYMBOL, interval=INTERVAL, limit=KLINES_NEEDED):
     """Lay du lieu 1H gan nhat tu Binance public API (khong can API key).
     Moi nen tra ve: open, high, low, close, volume, taker_buy_quote_volume, quote_volume.
-    Thu lan luot nhieu dia chi API neu cai truoc bi loi/bi chan (HTTP 451...).
+    Thu lan luot nhieu dia chi API neu cai truoc bi loi/bi chan (HTTP 451...) HOAC
+    tra ve du lieu kha nghi (xem _raw_looks_valid).
     """
     qs = urlencode({"symbol": symbol, "interval": interval, "limit": limit})
     last_err = None
     raw = None
+    tried_invalid = []
     for base in BINANCE_BASE_URLS:
         url = f"{base}/api/v3/klines?{qs}"
         try:
             req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urlopen(req, timeout=15) as resp:
-                raw = json.loads(resp.read().decode())
+                candidate = json.loads(resp.read().decode())
+            if not _raw_looks_valid(candidate):
+                tried_invalid.append(base)
+                last_err = f"Du lieu tu {base} kha nghi (taker-buy-volume bat thuong)"
+                continue
+            raw = candidate
             break
         except Exception as e:
             last_err = e
             continue
     if raw is None:
-        raise RuntimeError(f"Khong lay duoc du lieu tu bat ky dia chi Binance nao. Loi cuoi: {last_err}")
+        extra = f" (da thu nhung du lieu kha nghi tu: {tried_invalid})" if tried_invalid else ""
+        raise RuntimeError(f"Khong lay duoc du lieu HOP LE tu bat ky dia chi Binance nao.{extra} Loi cuoi: {last_err}")
 
     klines = []
     for row in raw:
@@ -211,6 +247,16 @@ def analyze(klines):
         return None
     delta_ratio = (signal_bar["buy_value"] - signal_bar["sell_value"]) / total
     price_move_pct = (signal_bar["close"] - signal_bar["open"]) / signal_bar["open"]
+
+    # Lop bao ve thu 2 (phong khi buoc kiem tra du lieu o fetch_klines bi lot):
+    # delta_ratio dung tuyet doi 1.000 (100% mot chieu, 0% ben con lai) gan nhu
+    # khong xay ra tu nhien voi cap co thanh khoan cao nhu BTCUSDT - rat co the
+    # la du lieu bi thieu/loi (vi du taker-buy-volume tra ve = 0) chu khong phai
+    # thi truong that su one-sided. Bo qua tin hieu nay va bao ro ly do.
+    if abs(abs(delta_ratio) - 1.0) < 1e-9:
+        return {"signal": False,
+                "reason": "NGHI NGO LOI DU LIEU: delta_ratio dung tuyet doi 1.000 (bat thuong) - bo qua tin hieu nay de an toan",
+                "delta_ratio": delta_ratio, "price_move_pct": price_move_pct}
 
     # dieu kien 1+2: ap luc ban manh (delta_ratio am, vuot nguong) VA gia dung yen/khong giam theo
     is_pressure = abs(delta_ratio) >= PRESSURE_THRESH
