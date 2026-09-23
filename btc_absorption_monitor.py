@@ -253,9 +253,9 @@ def analyze(klines):
     # khong xay ra tu nhien voi cap co thanh khoan cao nhu BTCUSDT - rat co the
     # la du lieu bi thieu/loi (vi du taker-buy-volume tra ve = 0) chu khong phai
     # thi truong that su one-sided. Bo qua tin hieu nay va bao ro ly do.
-    if abs(abs(delta_ratio) - 1.0) < 1e-9:
+    if abs(delta_ratio) > 0.98:
         return {"signal": False,
-                "reason": "NGHI NGO LOI DU LIEU: delta_ratio dung tuyet doi 1.000 (bat thuong) - bo qua tin hieu nay de an toan",
+                "reason": f"NGHI NGO LOI DU LIEU: delta_ratio gan +-1.000 ({delta_ratio:.6f}, mot chieu >98%) - bat thuong voi cap thanh khoan cao, bo qua tin hieu nay de an toan",
                 "delta_ratio": delta_ratio, "price_move_pct": price_move_pct}
 
     # dieu kien 1+2: ap luc ban manh (delta_ratio am, vuot nguong) VA gia dung yen/khong giam theo
@@ -320,7 +320,7 @@ def format_signal(result):
         f"  Entry (gia dong cua gio tin hieu): {result['entry']:,.2f}",
         f"  Stop loss:                          {result['stop']:,.2f}  (risk {result['risk_pct']:.2f}%)",
         f"  Target (R:R 1:{result['rr']:.1f}):          {result['target']:,.2f}",
-        f"  delta_ratio: {result['delta_ratio']:.3f} | bien dong gio tin hieu: {result['price_move_pct']*100:.3f}%",
+        f"  delta_ratio: {result['delta_ratio']:.5f} | bien dong gio tin hieu: {result['price_move_pct']*100:.3f}%",
         "-" * 50,
         "  LUU Y: day la ban chua tru phi/truot gia. Tu dat lenh tren san,",
         "  dat san stop loss + take profit ngay khi vao lenh.",
